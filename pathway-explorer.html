@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Pathway Explorer</title>
+  <!-- Include Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Include React and ReactDOM from CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Include Babel for JSX support -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    #root {
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // Main App Component
+    const PathwayExplorer = () => {
+      const [data, setData] = React.useState({
+        nodes: [
+          { id: 1, name: "Entry Level", type: "start", description: "Beginning roles in the field", x: 150, y: 150 },
+          { id: 2, name: "Mid Level", type: "pathway", description: "Intermediate positions requiring some experience", x: 350, y: 100 },
+          { id: 3, name: "Senior Level", type: "pathway", description: "Advanced roles with leadership responsibilities", x: 550, y: 150 },
+          { id: 4, name: "Technical Track", type: "pathway", description: "Specialized technical positions", x: 350, y: 250 },
+          { id: 5, name: "Management", type: "pathway", description: "Team and department leadership roles", x: 550, y: 300 },
+        ],
+        links: [
+          { source: 1, target: 2 },
+          { source: 1, target: 4 },
+          { source: 2, target: 3 },
+          { source: 2, target: 5 },
+          { source: 4, target: 3 },
+          { source: 4, target: 5 },
+        ]
+      });
+      
+      const [selectedNode, setSelectedNode] = React.useState(null);
+      const [editMode, setEditMode] = React.useState(false);
+      const [newNodeForm, setNewNodeForm] = React.useState({ name: '', type: 'pathway', description: '' });
+      const [newLinkForm, setNewLinkForm] = React.useState({ source: '', target: '' });
+      const [isDragging, setIsDragging] = React.useState(false);
+      const [dragNode, setDragNode] = React.useState(null);
+      const [dragOffset, setDragOffset] = React.useState({ x: 0, y: 0 });
+      
+      // Load saved data from localStorage on initial render
+      React.useEffect(() => {
+        try {
+          const savedData = localStorage.getItem('pathwayExplorerData');
+          if (savedData) {
+            setData(JSON.parse(savedData));
+          }
+        } catch (error) {
+          console.error("Error loading saved data:", error);
+        }
+      }, []);
+      
+      // Save data to localStorage whenever it changes
+      React.useEffect(() => {
+        try {
+          localStorage.setItem('pathwayExplorerData', JSON.stringify(data));
+        } catch (error) {
+          console.error("Error saving data:", error);
+        }
+      }, [data]);
+
+      // Handle node selection
+      const handleNodeClick = (node, event) => {
+        if (isDragging) return;
+        setSelectedNode(node);
+      };
+      
+      // Start dragging a node
+      const startDrag = (node, event) => {
+        if (editMode) {
+          event.stopPropagation();
+          const svgElement = event.target.closest('svg');
+          const svgRect = svgElement.getBoundingClientRect();
+          const offsetX = event.clientX - svgRect.left - node.x;
+          const offsetY = event.clientY - svgRect.top - node.y;
+          
+          setIsDragging(true);
+          setDragNode(node);
+          setDragOffset({ x: offsetX, y: offsetY });
+        }
+      };
+      
+      // Handle mouse move during drag
+      const handleMouseMove = (event) => {
+        if (isDragging && dragNode) {
+          event.preventDefault();
+          const svgElement = event.currentTarget;
+          const svgRect = svgElement.getBoundingClientRect();
+          
+          const newX = event.clientX - svgRect.left - dragOffset.x;
+          const newY = event.clientY - svgRect.top - dragOffset.y;
+          
+          // Update node position
+          const updatedNodes = data.nodes.map(node => 
+            node.id === dragNode.id ? { ...node, x: newX, y: newY } : node
+          );
+          
+          setData({
+            ...data,
+            nodes: updatedNodes
+          });
+        }
+      };
+      
+      // End drag operation
+      const endDrag = () => {
+        setIsDragging(false);
+        setDragNode(null);
+      };
+
+      // Add a new node
+      const addNode = () => {
+        // Generate random position within visible area
+        const newX = 100 + Math.random() * 400;
+        const newY = 100 + Math.random() * 200;
+        
+        const newNode = {
+          id: data.nodes.length > 0 ? Math.max(...data.nodes.map(n => n.id)) + 1 : 1,
+          ...newNodeForm,
+          x: newX,
+          y: newY
+        };
+        
+        setData({
+          ...data,
+          nodes: [...data.nodes, newNode]
+        });
+        
+        setNewNodeForm({ name: '', type: 'pathway', description: '' });
+      };
+
+      // Add a new link between nodes
+      const addLink = () => {
+        const source = parseInt(newLinkForm.source);
+        const target = parseInt(newLinkForm.target);
+        
+        if (source && target) {
+          // Check if link already exists
+          const linkExists = data.links.some(
+            link => (link.source === source && link.target === target) || 
+                   (link.source === target && link.target === source)
+          );
+          
+          if (!linkExists) {
+            const newLink = { source, target };
+            setData({
+              ...data,
+              links: [...data.links, newLink]
+            });
+          }
+          
+          setNewLinkForm({ source: '', target: '' });
+        }
+      };
+
+      // Delete a node
+      const deleteNode = (nodeId) => {
+        setData({
+          nodes: data.nodes.filter(node => node.id !== nodeId),
+          links: data.links.filter(link => link.source !== nodeId && link.target !== nodeId)
+        });
+        
+        if (selectedNode && selectedNode.id === nodeId) {
+          setSelectedNode(null);
+        }
+      };
+      
+      // Export data as JSON file
+      const exportData = () => {
+        const dataStr = JSON.stringify(data, null, 2);
+        const dataBlob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.download = 'pathway-data.json';
+        link.href = url;
+        link.click();
+      };
+      
+      // Import data from JSON file
+      const importData = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const importedData = JSON.parse(e.target.result);
+            if (importedData.nodes && importedData.links) {
+              setData(importedData);
+            }
+          } catch (error) {
+            alert('Error importing data: Invalid JSON format');
+            console.error(error);
+          }
+        };
+        reader.readAsText(file);
+      };
+      
+      // Reset to default data
+      const resetData = () => {
+        if (confirm('Are you sure you want to reset all data? This cannot be undone.')) {
+          setData({
+            nodes: [
+              { id: 1, name: "Entry Level", type: "start", description: "Beginning roles in the field", x: 150, y: 150 },
+              { id: 2, name: "Mid Level", type: "pathway", description: "Intermediate positions requiring some experience", x: 350, y: 100 },
+              { id: 3, name: "Senior Level", type: "pathway", description: "Advanced roles with leadership responsibilities", x: 550, y: 150 },
+              { id: 4, name: "Technical Track", type: "pathway", description: "Specialized technical positions", x: 350, y: 250 },
+              { id: 5, name: "Management", type: "pathway", description: "Team and department leadership roles", x: 550, y: 300 },
+            ],
+            links: [
+              { source: 1, target: 2 },
+              { source: 1, target: 4 },
+              { source: 2, target: 3 },
+              { source: 2, target: 5 },
+              { source: 4, target: 3 },
+              { source: 4, target: 5 },
+            ]
+          });
+          setSelectedNode(null);
+        }
+      };
+
+      return (
+        <div className="flex flex-col h-full bg-gray-100">
+          <div className="bg-blue-700 text-white p-4">
+            <h1 className="text-2xl font-bold">Interactive Pathway Explorer</h1>
+            <div className="flex justify-between items-center">
+              <p className="text-sm">Customize with your own career or learning pathways</p>
+              <button 
+                onClick={() => setEditMode(!editMode)} 
+                className="bg-blue-500 px-3 py-1 rounded hover:bg-blue-600"
+              >
+                {editMode ? 'View Mode' : 'Edit Mode'}
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex flex-1 overflow-hidden">
+            {/* Main visualization area */}
+            <div className="flex-1 relative bg-white border border-gray-200 m-4 rounded-lg shadow-lg overflow-hidden">
+              <svg 
+                width="100%" 
+                height="100%" 
+                className="absolute inset-0" 
+                onMouseMove={handleMouseMove}
+                onMouseUp={endDrag}
+                onMouseLeave={endDrag}
+              >
+                {/* Render connections between nodes */}
+                {data.links.map((link, index) => {
+                  const source = data.nodes.find(n => n.id === link.source);
+                  const target = data.nodes.find(n => n.id === link.target);
+                  if (!source || !target) return null;
+                  
+                  return (
+                    <line 
+                      key={`link-${index}`}
+                      x1={source.x} 
+                      y1={source.y} 
+                      x2={target.x} 
+                      y2={target.y} 
+                      stroke="#6B7280" 
+                      strokeWidth="2"
+                      strokeDasharray={source.type === 'placeholder' || target.type === 'placeholder' ? "5,5" : "none"}
+                    />
+                  );
+                })}
+                
+                {/* Render nodes */}
+                {data.nodes.map(node => {
+                  const isSelected = selectedNode && selectedNode.id === node.id;
+                  
+                  return (
+                    <g 
+                      key={`node-${node.id}`} 
+                      transform={`translate(${node.x},${node.y})`}
+                      onClick={(e) => handleNodeClick(node, e)}
+                      onMouseDown={(e) => startDrag(node, e)}
+                      style={{ cursor: editMode ? 'move' : 'pointer' }}
+                    >
+                      <circle 
+                        r={isSelected ? 35 : 30}
+                        fill={
+                          node.type === 'start' ? '#3B82F6' : 
+                          node.type === 'pathway' ? '#10B981' : 
+                          '#6B7280'
+                        }
+                        stroke={isSelected ? '#2563EB' : 'none'}
+                        strokeWidth="3"
+                        opacity={0.9}
+                      />
+                      <text 
+                        textAnchor="middle" 
+                        dy="0.3em" 
+                        fill="white" 
+                        fontSize="12"
+                        fontWeight="bold"
+                        pointerEvents="none"
+                      >
+                        {node.name}
+                      </text>
+                      
+                      {editMode && (
+                        <g transform="translate(20, -20)">
+                          <circle 
+                            r="12" 
+                            fill="#EF4444" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNode(node.id);
+                            }}
+                          />
+                          <text 
+                            textAnchor="middle" 
+                            dy="0.3em" 
+                            fill="white" 
+                            fontSize="14"
+                            fontWeight="bold"
+                            pointerEvents="none"
+                          >
+                            ×
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+            
+            {/* Side panel */}
+            <div className="w-80 border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
+              {editMode ? (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-bold text-lg mb-2">Add New Node</h3>
+                    <div className="space-y-2">
+                      <input 
+                        type="text" 
+                        placeholder="Node Name"
+                        value={newNodeForm.name}
+                        onChange={(e) => setNewNodeForm({...newNodeForm, name: e.target.value})}
+                        className="w-full p-2 border rounded"
+                      />
+                      <select 
+                        value={newNodeForm.type}
+                        onChange={(e) => setNewNodeForm({...newNodeForm, type: e.target.value})}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="start">Start Node</option>
+                        <option value="pathway">Pathway Node</option>
+                        <option value="placeholder">Placeholder</option>
+                      </select>
+                      <textarea 
+                        placeholder="Description"
+                        value={newNodeForm.description}
+                        onChange={(e) => setNewNodeForm({...newNodeForm, description: e.target.value})}
+                        className="w-full p-2 border rounded"
+                        rows="3"
+                      />
+                      <button 
+                        onClick={addNode}
+                        disabled={!newNodeForm.name}
+                        className="w-full p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                      >
+                        Add Node
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h3 className="font-bold text-lg mb-2">Add Connection</h3>
+                    <div className="space-y-2">
+                      <select 
+                        value={newLinkForm.source}
+                        onChange={(e) => setNewLinkForm({...newLinkForm, source: e.target.value})}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="">-- Source Node --</option>
+                        {data.nodes.map(node => (
+                          <option key={`source-${node.id}`} value={node.id}>
+                            {node.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select 
+                        value={newLinkForm.target}
+                        onChange={(e) => setNewLinkForm({...newLinkForm, target: e.target.value})}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="">-- Target Node --</option>
+                        {data.nodes.map(node => (
+                          <option key={`target-${node.id}`} value={node.id}>
+                            {node.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button 
+                        onClick={addLink}
+                        disabled={!newLinkForm.source || !newLinkForm.target || newLinkForm.source === newLinkForm.target}
+                        className="w-full p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                      >
+                        Add Connection
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-4 space-y-2">
+                    <h3 className="font-bold text-lg mb-2">Data Management</h3>
+                    <button 
+                      onClick={exportData}
+                      className="w-full p-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+                    >
+                      Export Data (Download JSON)
+                    </button>
+                    
+                    <div className="flex items-center space-x-2">
+                      <div className="w-full">
+                        <label className="w-full p-2 bg-gray-600 text-white rounded hover:bg-gray-700 flex items-center justify-center cursor-pointer">
+                          Import Data (Upload JSON)
+                          <input 
+                            type="file" 
+                            accept=".json" 
+                            onChange={importData} 
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      onClick={resetData}
+                      className="w-full p-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                      Reset to Default
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {selectedNode ? (
+                    <div className="space-y-4">
+                      <h2 className="text-2xl font-bold text-blue-700">{selectedNode.name}</h2>
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <h3 className="font-semibold text-blue-800 mb-1">Description</h3>
+                        <p>{selectedNode.description || "No description available."}</p>
+                      </div>
+                      
+                      <div className="bg-green-50 p-3 rounded-lg">
+                        <h3 className="font-semibold text-green-800 mb-1">Connected Pathways</h3>
+                        <ul className="list-disc pl-5">
+                          {data.links
+                            .filter(link => link.source === selectedNode.id || link.target === selectedNode.id)
+                            .map((link, idx) => {
+                              const connectedNodeId = link.source === selectedNode.id ? link.target : link.source;
+                              const connectedNode = data.nodes.find(n => n.id === connectedNodeId);
+                              if (!connectedNode) return null;
+                              
+                              return (
+                                <li key={`connected-${idx}`} className="mb-1">
+                                  <button 
+                                    className="text-blue-600 hover:underline"
+                                    onClick={() => setSelectedNode(connectedNode)}
+                                  >
+                                    {connectedNode.name}
+                                  </button>
+                                  {link.source === selectedNode.id ? " (leads to)" : " (prerequisite)"}
+                                </li>
+                              );
+                            })
+                          }
+                          {!data.links.some(link => link.source === selectedNode.id || link.target === selectedNode.id) && (
+                            <li>No connections found</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center p-8">
+                      <h3 className="text-xl font-semibold text-gray-600">Select a node to view details</h3>
+                      <p className="text-gray-500 mt-2">Click on any node in the visualization to see more information.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="bg-gray-200 p-2 text-sm text-center text-gray-500">
+            Interactive Pathway Explorer | Data is saved in your browser | Created with React
+          </div>
+        </div>
+      );
+    };
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PathwayExplorer />);
+  </script>
+</body>
+</html>
